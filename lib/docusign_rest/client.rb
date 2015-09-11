@@ -534,13 +534,76 @@ module DocusignRest
     # and sets up the inline template
     #
     # Returns an array of signers
-    def get_inline_signers(signers, sequence)
+    def get_inline_signers(signers, sequence, options={})
       signers_array = []
-      signers.each do |signer|
-        signers_hash = Hash[:email, signer[:email], :name, signer[:name], \
-          :recipientId, signer[:recipient_id], :roleName, signer[:role_name], \
-          :clientUserId, signer[:client_id] || signer[:email]]
-        signers_array << signers_hash
+      signers.each_with_index do |signer, index|
+        if signer[:recipient_id]
+          index = signer[:recipient_id]
+        else
+          index += 1
+        end
+
+        doc_signer = {
+          email:                                 signer[:email],
+          name:                                  signer[:name],
+          accessCode:                            '',
+          addAccessCodeToEmail:                  false,
+          customFields:                          nil,
+          iDCheckConfigurationName:              nil,
+          iDCheckInformationInput:               nil,
+          inheritEmailNotificationConfiguration: false,
+          note:                                  '',
+          phoneAuthentication:                   nil,
+          recipientAttachment:                   nil,
+          recipientId:                           "#{index}",
+          requireIdLookup:                       false,
+          roleName:                              signer[:role_name],
+          routingOrder:                          index,
+          socialAuthentications:                 nil
+        }
+
+        if signer[:email_notification]
+          doc_signer[:emailNotification] = signer[:email_notification]
+        end
+
+        if signer[:embedded]
+          doc_signer[:clientUserId] = signer[:client_id] || signer[:email]
+        end
+
+        if options[:template] == true
+          doc_signer[:templateAccessCodeRequired] = false
+          doc_signer[:templateLocked]             = signer[:template_locked].nil? ? true : signer[:template_locked]
+          doc_signer[:templateRequired]           = signer[:template_required].nil? ? true : signer[:template_required]
+        end
+
+        doc_signer[:autoNavigation]   = false
+        doc_signer[:defaultRecipient] = false
+        doc_signer[:signatureInfo]    = nil
+        doc_signer[:tabs]             = {
+          approveTabs:          nil,
+          checkboxTabs:         get_tabs(signer[:checkbox_tabs], options, index),
+          companyTabs:          nil,
+          dateSignedTabs:       get_tabs(signer[:date_signed_tabs], options, index),
+          dateTabs:             nil,
+          declineTabs:          nil,
+          emailTabs:            get_tabs(signer[:email_tabs], options, index),
+          envelopeIdTabs:       nil,
+          fullNameTabs:         get_tabs(signer[:full_name_tabs], options, index),
+          listTabs:             get_tabs(signer[:list_tabs], options, index),
+          noteTabs:             nil,
+          numberTabs:           nil,
+          radioGroupTabs:       get_tabs(signer[:radio_group_tabs], options, index),
+          initialHereTabs:      get_tabs(signer[:initial_here_tabs], options.merge!(initial_here_tab: true), index),
+          signHereTabs:         get_tabs(signer[:sign_here_tabs], options.merge!(sign_here_tab: true), index),
+          signerAttachmentTabs: nil,
+          ssnTabs:              nil,
+          textTabs:             get_tabs(signer[:text_tabs], options, index),
+          titleTabs:            get_tabs(signer[:title_tabs], options, index),
+          zipTabs:              nil
+        }
+
+        # append the fully build string to the array
+        signers_array << doc_signer
       end
       template_hash = Hash[:sequence, sequence, :recipients, { signers: signers_array }]
       [template_hash]
