@@ -523,7 +523,7 @@ module DocusignRest
         server_template_hash = Hash[:sequence, index += 1, \
           :templateId, template_id]
         templates_hash = Hash[:serverTemplates, [server_template_hash], \
-          :inlineTemplates,  get_inline_signers(signers, index += 1)]
+          :inlineTemplates,  get_inline_signers([signers.shift], index += 1)]
         composite_array << templates_hash
       end
       composite_array
@@ -537,12 +537,7 @@ module DocusignRest
     def get_inline_signers(signers, sequence, options={})
       signers_array = []
       signers.each_with_index do |signer, index|
-        if signer[:recipient_id]
-          index = signer[:recipient_id]
-        else
-          index += 1
-        end
-
+        index = (index != 0) ? (index + 1) : 1
         doc_signer = {
           email:                                 signer[:email],
           name:                                  signer[:name],
@@ -561,7 +556,6 @@ module DocusignRest
           routingOrder:                          index,
           socialAuthentications:                 nil
         }
-
         if signer[:email_notification]
           doc_signer[:emailNotification] = signer[:email_notification]
         end
