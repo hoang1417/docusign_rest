@@ -128,13 +128,13 @@ module DocusignRest
     # Examples:
     #
     #   client = DocusignRest::Client.new
-    #   response = client.get_token('someone@example.com', 'p@ssw0rd01')
+    #   response = client.get_token(integrator_key, 'someone@example.com', 'p@ssw0rd01')
     #
     # Returns:
     #   access_token - Access token information
     #   scope - This should always be "api"
     #   token_type - This should always be "bearer"
-    def get_token(account_id, email, password)
+    def get_token(integrator_key, email, password)
       content_type = { 'Content-Type' => 'application/x-www-form-urlencoded', 'Accept' => 'application/json' }
       uri = build_uri('/oauth2/token')
 
@@ -523,7 +523,7 @@ module DocusignRest
         server_template_hash = Hash[:sequence, index += 1, \
           :templateId, template_id]
         templates_hash = Hash[:serverTemplates, [server_template_hash], \
-          :inlineTemplates,  get_inline_signers(signers, index += 1)]
+          :inlineTemplates,  get_inline_signers([signers.shift], index += 1)]
         composite_array << templates_hash
       end
       composite_array
@@ -534,13 +534,70 @@ module DocusignRest
     # and sets up the inline template
     #
     # Returns an array of signers
-    def get_inline_signers(signers, sequence)
+    def get_inline_signers(signers, sequence, options={})
       signers_array = []
-      signers.each do |signer|
-        signers_hash = Hash[:email, signer[:email], :name, signer[:name], \
-          :recipientId, signer[:recipient_id], :roleName, signer[:role_name], \
-          :clientUserId, signer[:client_id] || signer[:email]]
-        signers_array << signers_hash
+      signers.each_with_index do |signer, index|
+        index = (index != 0) ? (index + 1) : 1
+        doc_signer = {
+          email:                                 signer[:email],
+          name:                                  signer[:name],
+          accessCode:                            '',
+          addAccessCodeToEmail:                  false,
+          customFields:                          nil,
+          iDCheckConfigurationName:              nil,
+          iDCheckInformationInput:               nil,
+          inheritEmailNotificationConfiguration: false,
+          note:                                  '',
+          phoneAuthentication:                   nil,
+          recipientAttachment:                   nil,
+          recipientId:                           "#{index}",
+          requireIdLookup:                       false,
+          roleName:                              signer[:role_name],
+          routingOrder:                          index,
+          socialAuthentications:                 nil
+        }
+        if signer[:email_notification]
+          doc_signer[:emailNotification] = signer[:email_notification]
+        end
+
+        if signer[:embedded]
+          doc_signer[:clientUserId] = signer[:client_id] || signer[:email]
+        end
+
+        if options[:template] == true
+          doc_signer[:templateAccessCodeRequired] = false
+          doc_signer[:templateLocked]             = signer[:template_locked].nil? ? true : signer[:template_locked]
+          doc_signer[:templateRequired]           = signer[:template_required].nil? ? true : signer[:template_required]
+        end
+
+        doc_signer[:autoNavigation]   = false
+        doc_signer[:defaultRecipient] = false
+        doc_signer[:signatureInfo]    = nil
+        doc_signer[:tabs]             = {
+          approveTabs:          nil,
+          checkboxTabs:         get_tabs(signer[:checkbox_tabs], options, index),
+          companyTabs:          nil,
+          dateSignedTabs:       get_tabs(signer[:date_signed_tabs], options, index),
+          dateTabs:             nil,
+          declineTabs:          nil,
+          emailTabs:            get_tabs(signer[:email_tabs], options, index),
+          envelopeIdTabs:       nil,
+          fullNameTabs:         get_tabs(signer[:full_name_tabs], options, index),
+          listTabs:             get_tabs(signer[:list_tabs], options, index),
+          noteTabs:             nil,
+          numberTabs:           nil,
+          radioGroupTabs:       get_tabs(signer[:radio_group_tabs], options, index),
+          initialHereTabs:      get_tabs(signer[:initial_here_tabs], options.merge!(initial_here_tab: true), index),
+          signHereTabs:         get_tabs(signer[:sign_here_tabs], options.merge!(sign_here_tab: true), index),
+          signerAttachmentTabs: nil,
+          ssnTabs:              nil,
+          textTabs:             get_tabs(signer[:text_tabs], options, index),
+          titleTabs:            get_tabs(signer[:title_tabs], options, index),
+          zipTabs:              nil
+        }
+
+        # append the fully build string to the array
+        signers_array << doc_signer
       end
       template_hash = Hash[:sequence, sequence, :recipients, { signers: signers_array }]
       [template_hash]
@@ -941,6 +998,8 @@ module DocusignRest
     # from_to_status - The status of the envelope checked for in the from_date - to_date period.
     #                  Defaults to 'changed'
     #
+    # envelope_ids   - Comma joined list of envelope_ids which you want to query.
+    #
     # status         - The current status of the envelope. Defaults to any status.
     #
     # Returns an array of hashes containing envelope statuses, ids, and similar information.
@@ -948,7 +1007,7 @@ module DocusignRest
       content_type = { 'Content-Type' => 'application/json' }
       content_type.merge(options[:headers]) if options[:headers]
 
-      query_params = options.slice(:from_date, :to_date, :from_to_status, :status)
+      query_params = options.slice(:from_date, :to_date, :from_to_status, :envelope_ids, :status)
       uri = build_uri("/accounts/#{acct_id}/envelopes?#{query_params.to_query}")
 
       http     = initialize_net_http_ssl(uri)
